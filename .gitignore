@@ -7,3 +7,4 @@ Dataset006_BraTS2023_PED
 Dataset008_BraTS2023_PED_ONLY_ET
 *.nii.gz
 .DS_Store
+.vscode

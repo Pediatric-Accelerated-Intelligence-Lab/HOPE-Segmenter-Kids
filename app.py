@@ -99,7 +99,8 @@ def run_inference(
     os.makedirs(output_folder, exist_ok=True)
     
     # Define paths for the output segmentation
-    output_path = output_folder / f"seg_{image_t1c.name}"
+    output_fname = image_t1c.name.replace("-t1c.nii.gz", "-pred.nii.gz")
+    output_path = output_folder / output_fname
     fake_output_path = output_folder / f"{DUMMY_DIR}.nii.gz"
 
     # MOVE each image to the input directory with the dummy filenames
@@ -196,6 +197,22 @@ def render_slice(
     return slice_img, slice_mask
 
 
+def check_existing_pred(image_t1c: Path) -> bool:
+    """Check if a segmentation prediction already exists for the provided image.
+
+    Args:
+        image_t1c (Path): Path to the T1 contrast-enhanced MRI image.
+
+    Returns:
+        bool: True if a prediction exists, False otherwise.
+    """
+    basename = os.path.basename(image_t1c)
+    basename_without_ext_and_modality = basename.replace("-t1c.nii.gz", "")
+    case_data_dir = os.path.join("./examples_segmented", basename_without_ext_and_modality)
+    maybe_mask_path = os.path.join(case_data_dir, basename.replace("-t1c.nii.gz", "-pred.nii.gz"))
+    return os.path.exists(maybe_mask_path)
+
+
 def main_func(
     image_t1c: Path, image_t2f: Path, image_t1n: Path, image_t2w: Path
 ) -> Tuple[str, str]:
@@ -223,14 +240,34 @@ def main_func(
     """
     print(image_t1c)
     global mydict
+    
+    if check_existing_pred(image_t1c):
+        # Retrieve the existing segmentation mask
+        mask_path = os.path.join(
+            "./examples_segmented",
+            os.path.basename(image_t1c).replace("-t1c.nii.gz", ""),
+            os.path.basename(image_t1c).replace("-t1c.nii.gz", "-pred.nii.gz"),
+        )
+        image_files = [
+            os.path.join(
+                "./examples_segmented",
+                os.path.basename(image_t1c).replace("-t1c.nii.gz", ""),
+                os.path.basename(image_t1c).replace("-t1c.nii.gz", f"-{modality}.nii.gz"),
+            )
+            for modality in ["t1c", "t2f", "t1n", "t2w"]
+        ]
+        # sleep for 30 seconds
+        import time
+        time.sleep(15)
+    else:
+        # Run inference and get paths
+        input_path, mask_path = run_inference(
+            Path(image_t1c), Path(image_t2f), Path(image_t1n), Path(image_t2w)
+        )
 
-    # Run inference and get paths
-    input_path, mask_path = run_inference(
-        Path(image_t1c), Path(image_t2f), Path(image_t1n), Path(image_t2w)
-    )
-
-    # Retrieve all NIfTI files in the input directory
-    image_files = glob.glob(os.path.join(input_path, "*.nii.gz"))
+        # Retrieve all NIfTI files in the input directory
+        image_files = glob.glob(os.path.join(input_path, "*.nii.gz"))
+        
     mydict["img_path"] = image_files
     mydict["mask_path"] = mask_path
 
@@ -409,11 +446,16 @@ with gr.Blocks(title="Pediatric Segmenter") as demo:
         image_t2w = gr.File(
             label="Upload T2 Weighted Here:", file_types=[".gz"]
         )
+        mask_path = gr.File(
+            label="Upload Segmentation Here:", file_types=[".gz"], visible=False
+        )
     with gr.Row():
         with gr.Column():
             pass
         with gr.Column():
-            enable_checkbox = gr.Checkbox(label="I have read the instructions and accept the terms.", value=False, info="#### Please read the [instructions](https://docs.hope4kids.io/HOPE-Segmenter-Kids/) before using the app.", container=False)
+            gr.Markdown("#### Please read the [instructions](https://docs.hope4kids.io/HOPE-Segmenter-Kids/) before using the app.")
+            enable_checkbox = gr.Checkbox(label="I have read the instructions and accept the terms.", value=False, container=False)
+            # enable_checkbox = gr.Checkbox(label="I have read the instructions and accept the terms.", value=False, info="#### Please read the [instructions](https://docs.hope4kids.io/HOPE-Segmenter-Kids/) before using the app.", container=False)
         with gr.Column():
             pass    # Segmentation Button
     with gr.Row():
@@ -476,17 +518,52 @@ with gr.Blocks(title="Pediatric Segmenter") as demo:
     with gr.Row():
         mask_file = gr.File(label="Download Segmentation File", height="vw")
 
-    # Examples Setup
-    example_dir = "./examples"
-    generate_examples =  [os.path.join(example_dir, names) for names in ['BraTS-PED-00019-000', 'BraTS-PED-00051-000', 'BraTS-PED-00300-000', 'BraTS-PED-00001-000', 'BraTS-PED-00018-000', 'BraTS-PED-00021-000', 'BraTS-PED-00351-000' ]]#sorted(glob.glob(os.path.join(example_dir, "*")))
-    order_list = ["-t1c.nii.gz", "-t2f.nii.gz", "-t1n.nii.gz", "-t2w.nii.gz"]
-    example_list = [
-        [os.path.join(path, f"{Path(path).name}{ending}") for ending in order_list]
-        for path in generate_examples
-    ]
+    # # Examples Setup
+    # example_dir = "./examples"
+    # generate_examples =  [os.path.join(example_dir, names) for names in [
+    #     'BraTS-PED-00019-000',
+    #     'BraTS-PED-00051-000',
+    #     'BraTS-PED-00300-000',
+    #     'BraTS-PED-00001-000',
+    #     'BraTS-PED-00018-000',
+    #     'BraTS-PED-00021-000',
+    #     'BraTS-PED-00351-000'
+    # ]]#sorted(glob.glob(os.path.join(example_dir, "*")))
+    # order_list = ["-t1c.nii.gz", "-t2f.nii.gz", "-t1n.nii.gz", "-t2w.nii.gz"]
+    # example_list = [
+    #     [os.path.join(path, f"{Path(path).name}{ending}") for ending in order_list]
+    #     for path in generate_examples
+    # ]
 
+    # gr.Examples(
+    #     examples=example_list,
+    #     inputs=[image_t1c, image_t2f, image_t1n, image_t2w],
+    #     outputs=[mask_file, out_text],
+    #     fn=main_func,
+    #     cache_examples=False,
+    #     label="Preloaded BraTS2024 Examples",
+    # )
+    
+    # Segmented Examples Setup
+    example_dir_seg = "./examples_segmented"
+    generate_examples_segmented =  [os.path.join(example_dir_seg, names) for names in [
+        'BraTS-PED-00037-000',
+        'BraTS-PED-00060-000',
+        'BraTS-PED-00146-000',
+        'BraTS-PED-00223-000',
+        'BraTS-PED-00326-000',
+        'BraTS-PED-00330-000',
+        'BraTS-PED-00348-000',
+        'BraTS-PED-00351-000',
+    ]]
+    order_list = ["-t1c.nii.gz", "-t2f.nii.gz", "-t1n.nii.gz", "-t2w.nii.gz"]
+    example_list_segmented = [
+        [os.path.join(path, f"{Path(path).name}{ending}") for ending in order_list]
+        for path in generate_examples_segmented
+    ]
+    
     gr.Examples(
-        examples=example_list,
+        examples=example_list_segmented,
         inputs=[image_t1c, image_t2f, image_t1n, image_t2w],
         outputs=[mask_file, out_text],
         fn=main_func,
@@ -539,4 +616,4 @@ with gr.Blocks(title="Pediatric Segmenter") as demo:
     )
 
 if __name__ == "__main__":
-    demo.queue().launch(server_name="0.0.0.0", server_port=7860, show_api=False, favicon_path='./app_assets/favicon.ico')
+    demo.queue().launch(server_name="0.0.0.0", server_port=7860, show_api=False, favicon_path='./app_assets/favicon.ico', share=True)
