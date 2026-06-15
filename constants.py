@@ -17,7 +17,7 @@ class RegionName(StrEnum):
 class TaskName(StrEnum):
     gli = "Task 1 - BraTS-GLI"
     men = "Task 2 - BraTS-MEN"
-    menrt = "Task 3 - BraTS-MEN-RT"
+    #menrt = "Task 3 - BraTS-MEN-RT"
     met = "Task 4 - BraTS-MET"
     ssa = "Task 5 - BraTS-SSA"
     peds = "Task 6 - BraTS-PED"
@@ -25,8 +25,16 @@ class TaskName(StrEnum):
 
 DUMMY_DIR = "BraTS-PED-00019-000"
 DUMMY_FILE_NAMES = {modality: f"{DUMMY_DIR}-{modality}.nii.gz" for modality in ["t1c", "t2f", "t1n", "t2w"]}
-DOCKER_TASK_DICT = {task.value: f"aparida12/brats-{task.name}-2024:v20250123" for task in TaskName}
+DOCKER_TASK_DICT = {task.value: f"aparida12/brats2025:{task.name}" for task in TaskName}
 
+TASK_NAME_MAPING ={
+    TaskName.peds.value: "Pediatric Tumor Segmentation",
+    TaskName.gli.value: "Adult Glioma Segmentation",
+    TaskName.ssa.value: "Sub-Saharan Africa Adult Glioma Segmentation",
+    #TaskName.menrt.value: "menrt",
+    TaskName.met.value: "Adult Metastasis Segmentation",
+    TaskName.men.value: "Adult Pre-treatment Meningioma Segmentation",
+}
 LABEL_MAPPING_FACTORY = {
     TaskName.peds.value: {
         1: RegionName.ET.value,
@@ -45,9 +53,9 @@ LABEL_MAPPING_FACTORY = {
         2: RegionName.ED.value,
         3: RegionName.ET.value
     },
-    TaskName.menrt.value: {
-        1: RegionName.GTV.value
-    },
+    # TaskName.menrt.value: {
+    #     1: RegionName.GTV.value
+    # },
     TaskName.met.value: {
         1: RegionName.NETC.value,
         2: RegionName.SNFH.value,
@@ -69,3 +77,6 @@ SUFFIX = {
     }
 
 AXIS_MAP = {"axial": 0, "coronal": 1, "sagittal": 2}
+EXAMPLE_LIST = ['BraTS-GLI-00492-000', 'BraTS-MEN-00134-000', 'BraTS-MET-00910-000', 'BraTS-PED-00019-000', 'BraTS-SSA-00163-000' ]
+EXAMPLE_TASKS = [TaskName.gli.value, TaskName.men.value, TaskName.met.value, TaskName.peds.value, TaskName.ssa.value]
+EXAMPLE_OUTPUTS = {folder: f'example_outs/{folder}.nii.gz' for folder in EXAMPLE_LIST}

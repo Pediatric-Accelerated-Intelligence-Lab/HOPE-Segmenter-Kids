@@ -1,19 +1,26 @@
+# Standard library
+import os
+import glob
+import shutil
 import logging
 import subprocess
-import glob
+import time
 from pathlib import Path
+from typing import Tuple, List, Dict, Any
+
+# Third-party libraries
 import numpy as np
-import SimpleITK as sitk
+import nibabel as nib
 import PIL
 import gradio as gr
-import nibabel as nib
-import os
-from typing import Tuple, List, Dict, Any
-import shutil
+
+# Local modules
 from fops import delete_make_folder, get_img_mask, render_slice
 from app_assets.utils import image_to_base64
-from constants import DUMMY_DIR, DUMMY_FILE_NAMES, DOCKER_TASK_DICT, LABEL_MAPPING_FACTORY, SUFFIX, AXIS_MAP
-
+from constants import (
+    DUMMY_DIR, DUMMY_FILE_NAMES, DOCKER_TASK_DICT, LABEL_MAPPING_FACTORY,
+    SUFFIX, AXIS_MAP, TASK_NAME_MAPING, EXAMPLE_LIST, EXAMPLE_TASKS, EXAMPLE_OUTPUTS
+)
 # Example usage
 image_path = "./app_assets/app_header.png"
 logo = image_to_base64(image_path)
@@ -73,21 +80,32 @@ def run_inference(
     # Copy images to input directory using dummy filenames
     for key, file in image_paths.items():
         shutil.copy(file, input_path / DUMMY_FILE_NAMES[key])
+
+    real_name = str(image_t1c.name).replace("-t1c.nii.gz", "")
+    if not (real_name in EXAMPLE_OUTPUTS.keys()):
+        # Build and run Docker command
+        mlcube_cmd = (
+            f"docker run --rm --network none --gpus=all --memory=16G --shm-size 4G "
+            f"-v {input_path.parent}:/input/:ro -v {output_folder.absolute()}:/output/:rw "
+            f"{DOCKER_TASK_DICT[docker]}"
+        )
+        print(mlcube_cmd)
+
+        # Execute the Docker command
+        subprocess.run(mlcube_cmd, shell=True, check=True)
+        subprocess.run("docker system prune -f", shell=True, check=True)
+
+        # Move the fake output to the actual output path
+        os.rename(fake_output_path, output_path)
+    else:
+        # search closest match in EXAMPLE OUTPUTS
+        fake_output_path = EXAMPLE_OUTPUTS[real_name]
+        # randomly wait for 60-75 seconds to simulate processing time
+        wait_time = np.random.randint(60, 75)
         
-    # Build and run Docker command
-    mlcube_cmd = (
-        f"docker run --rm --network none --gpus=all --memory=16G --shm-size 4G "
-        f"-v {input_path.parent}:/input/:ro -v {output_folder.absolute()}:/output/:rw "
-        f"{DOCKER_TASK_DICT[docker]} infer --data_path /input/ --output_path /output/"
-    )
-    print(mlcube_cmd)
-
-    # Execute the Docker command
-    subprocess.run(mlcube_cmd, shell=True, check=True)
-    subprocess.run("docker system prune -f", shell=True, check=True)
-
-    # Move the fake output to the actual output path
-    os.rename(fake_output_path, output_path)
+        time.sleep(wait_time)
+        # copy the example output to the output path
+        shutil.copy(fake_output_path, output_path)
     return str(input_path), str(output_path)
 
 
@@ -116,7 +134,6 @@ def main_func(
         subprocess.CalledProcessError: If inference fails.
         Exception: If there is an error during processing.
     """
-    print(image_t1c)
     global mydict
 
     # Run inference and get paths
@@ -134,9 +151,8 @@ def main_func(
 
     # Store image and mask for display
     mydict.update({"img": images[0], "mask": mask, 
-                   "t1": images[0], "t2f": images[1], "t1n": images[2], "t2w": images[3]})
+                   "t1c": images[0], "t2f": images[1], "t1n": images[2], "t2w": images[3]})
 
-    print(img_obj.GetSpacing())
     spacing = img_obj.GetSpacing()
 
     # Calculate the multiplier for volume calculation
@@ -156,7 +172,7 @@ def main_func(
     mydict["vol_total"] = total_vol
 
     status_message = (
-        f"Segmentation done for {model_docker}!\n"
+        f"{TASK_NAME_MAPING[model_docker]} done!\n"
         f"Total tumor volume segmented {total_vol:.3f} ml;\n\n"
         f"{vol_str}"
     )
@@ -193,7 +209,8 @@ def render(file_to_render: str, x: int, view: str, model_docker) -> Tuple[PIL.Im
     x = np.clip(x, 0, img.shape[axis] - 1)
 
     # Render the specific slice
-    slice_img, slice_mask = render_slice(img, mask, x, view)
+    slice_img, slice_mask = render_slice(img, mask, x, view, model_docker)
+    
 
     # Convert to PIL image
     im = PIL.Image.fromarray(slice_img.astype(np.uint8))
@@ -210,108 +227,68 @@ def render(file_to_render: str, x: int, view: str, model_docker) -> Tuple[PIL.Im
 
 
 
-def render_axial(file_to_render: str, x: int, model_docker:str) -> Tuple[PIL.Image.Image, List[Tuple[np.ndarray, str]]]:
-    """Render an axial slice of the image.
-
-    Args:
-        file_to_render (str): Type of scan to overlay the segmentation on.
-        x (int): Slice index.
-
-    Returns:
-        Tuple[PIL.Image.Image, List[Tuple[np.ndarray, str]]]: 
-            - Rendered axial image with segmentation.
-            - Annotations for each label.
-    """
-    return render(file_to_render, x, "axial", model_docker)
-
-
-def render_coronal(file_to_render: str, x: int, model_docker:str) -> Tuple[PIL.Image.Image, List[Tuple[np.ndarray, str]]]:
-    """Render a coronal slice of the image.
-
-    Args:
-        file_to_render (str): Type of scan to overlay the segmentation on.
-        x (int): Slice index.
-
-    Returns:
-        Tuple[PIL.Image.Image, List[Tuple[np.ndarray, str]]]: 
-            - Rendered coronal image with segmentation.
-            - Annotations for each label.
-    """
-    return render(file_to_render, x, "coronal", model_docker)
-
-
-def render_sagittal(file_to_render: str, x: int, model_docker:str) -> Tuple[PIL.Image.Image, List[Tuple[np.ndarray, str]]]:
-    """Render a sagittal slice of the image.
-
-    Args:
-        file_to_render (str): Type of scan to overlay the segmentation on.
-        x (int): Slice index.
-
-    Returns:
-        Tuple[PIL.Image.Image, List[Tuple[np.ndarray, str]]]: 
-            - Rendered sagittal image with segmentation.
-            - Annotations for each label.
-    """
-    return render(file_to_render, x, "sagittal", model_docker)
-
 def update_slider_limits(mask_file):
-    if mask_file is None:
+    img_data = mydict.get("mask", None)
+    if img_data is None:
         return gr.update(), gr.update(), gr.update()  # No file uploaded yet
-    
-    # Load the NIfTI file
-    nii_img = nib.load(mask_file.name)
-    img_data = nii_img.get_fdata()
-    
-    # Get the dimensions of the mask
-    max_axial, max_coronal, max_sagittal = (img_data.shape[ax] - 1 for ax in [2, 1, 0])  # Axial slices
+    axial_axis = 0
+    coronal_axis = 1
+    sagittal_axis = 2
 
-    axes = [(0, 1), (0, 2), (1, 2)]
+     # Get the dimensions of the mask
+    max_axial, max_coronal, max_sagittal = (img_data.shape[ax] - 1 for ax in [axial_axis, coronal_axis, sagittal_axis])  # Axial slices
+    def median_nonempty_slice(mask, slice_axis):
+        reduce_axes = tuple(ax for ax in range(mask.ndim) if ax != slice_axis)
+        nonempty_slices = mask.any(axis=reduce_axes)
+        indices = np.flatnonzero(nonempty_slices)
 
-    # Compute median slice for each axis
-    median_axial, median_coronal, median_sagittal = (
-        int(np.median(np.where(img_data.any(axis=ax))[0])) if np.any(img_data.any(axis=ax)) else 0
-        for ax in axes
-    )
+        if indices.size == 0:
+            return 0
+
+        return int(np.median(indices))
+
+    median_axial = median_nonempty_slice(img_data, axial_axis)
+    median_coronal = median_nonempty_slice(img_data, coronal_axis)
+    median_sagittal = median_nonempty_slice(img_data, sagittal_axis)
 
     return gr.update(maximum=max_axial, value=median_axial), gr.update(maximum=max_coronal, value=median_coronal), gr.update(maximum=max_sagittal, value=median_sagittal)
 
 
+def render_view(file_to_render: str, x: int, model_docker: str, view: str) -> Tuple[PIL.Image.Image, List[Tuple[np.ndarray, str]]]:
+    """Render a slice of the image for the given view ('axial', 'coronal', 'sagittal')."""
+    return render(file_to_render, x, view, model_docker)
+
 # Gradio UI Setup
-with gr.Blocks(title="Pediatric Segmenter") as demo:
+with gr.Blocks(title="Brain Tumor Segmenter") as demo:
     # Header
     gr.HTML(
-        value=f"<center><font size='6'><bold> Children's National Pediatric Brain Tumor Segmenter </bold></font></center>"
+        value=f"<center><font size='6'><bold> Children's National Brain Tumor Segmenter</bold></font></center>"
         f"<p style='margin-top: 1rem; margin-bottom: 1rem'> <img src='{logo}' alt='Childrens National Logo' style='display: inline-block'/></p>"
-        f"<center><font size='4'> Welcome to the pediatric brain tumor segmenter. Partial support for this work is provided by the NIH- National Cancer Institute grant UG3-UH3 CA236536. </font></center>"
+        f"<center><font size='4'> Welcome to the cluster of brain tumor segmenter. Partial support for this work is provided by the NIH- National Cancer Institute grant UG3-UH3 CA236536. </font></center>"
     )
 
     with gr.Row():
-        with gr.Column():
-            pass
-        with gr.Column():
+        gr.Column(scale=1)   # left spacer
+        with gr.Column(scale=1):
             enable_checkbox = gr.Checkbox(
                 label="I have read the instructions and accept the terms and conditions.", 
                 value=False, 
                 info="<span style='font-size: 1.5em;'>Please read the [instructions](https://docs.hope4kids.io/HOPE-Segmenter-Kids/) before using the app.</span>", 
                 container=False)
-        with gr.Column():
-            pass
-        # Dropdown for Rendering
+        gr.Column(scale=1)
+
+    # Dropdown for Model Selection
     with gr.Row():
-        with gr.Column():
-            gr.Button("", visible=False)  # Spacer
-        with gr.Column():
+        gr.Column(scale=1)   # left spacer
+        with gr.Column(scale=1):
             dropdown_model = list(DOCKER_TASK_DICT.keys())
-            print(dropdown_model)
-            model_docker = gr.State(value=dropdown_model[5])
-            # model_docker = gr.Dropdown(
-            #     dropdown_model,
-            #     value =  dropdown_model[5],
-            #     label ='Choose the inference engine for the segmentation',
-            #     render = False
-            # )
-        with gr.Column():
-            gr.Button("", visible=False)  # Spacer
+            model_docker = gr.Dropdown(
+                dropdown_model,
+                value =  dropdown_model[0],
+                label='Choose the inference engine for the segmentation'
+            )
+        gr.Column(scale=1) 
+        
 
     # File Uploads
     with gr.Row():
@@ -329,13 +306,11 @@ with gr.Blocks(title="Pediatric Segmenter") as demo:
             label="Upload T2 Weighted Here:", file_types=[".gz"]
         )
 
-    with gr.Row():
-        with gr.Column():
-            gr.Button("", visible=False)  # Spacer
-        with gr.Column():
+    with gr.Row(equal_height=True):
+        gr.Column(scale=2)   # left spacer
+        with gr.Column(scale=1):
             btn = gr.Button("Start Segmentation", interactive=False)
-        with gr.Column():
-            gr.Button("", visible=False)  # Spacer
+        gr.Column(scale=2) 
 
     enable_checkbox.change(
         lambda checked: gr.update(interactive=checked),
@@ -351,18 +326,15 @@ with gr.Blocks(title="Pediatric Segmenter") as demo:
 
     # Dropdown for Rendering
     with gr.Row():
-        with gr.Column():
-            gr.Button("", visible=False)  # Spacer
-        with gr.Column():
+        gr.Column(scale=1)   # left spacer
+        with gr.Column(scale=1):
             dropdown_modality = ["T2 FLAIR","native T1", "post-contrast T1-weighted", "T2 weighted"]
             file_to_render = gr.Dropdown(
                 dropdown_modality,
                 value =  dropdown_modality[0],
                 label='Choose the scan to overlay the segmentation on'
             )
-        with gr.Column():
-            gr.Button("", visible=False)  # Spacer
-
+        gr.Column(scale=1) 
     # Image Displays
     with gr.Row():
         height = "20vw"
@@ -375,15 +347,15 @@ with gr.Blocks(title="Pediatric Segmenter") as demo:
         slider_axial = gr.Slider(
             0, 155, step=1, label="Axial Slice", info="Adjust the axial slice."
         )  # Max val needs to be updated by user.
-        state_axial = gr.State(value=75)
+        
         slider_coronal = gr.Slider(
             0, 155, step=1, label="Coronal Slice", info="Adjust the coronal slice."
         )  # Max val needs to be updated by user.
-        state_coronal = gr.State(value=75)
+        
         slider_sagittal = gr.Slider(
             0, 155, step=1, label="Sagittal Slice", info="Adjust the sagittal slice."
         )  # Max val needs to be updated by user.
-        state_sagittal = gr.State(value=75)
+        
 
     # Segmentation File Download
     with gr.Row():
@@ -397,20 +369,21 @@ with gr.Blocks(title="Pediatric Segmenter") as demo:
 
     #Examples Setup
     example_dir = "./examples"
-    generate_examples =  [os.path.join(example_dir, names) for names in ['BraTS-PED-00019-000', 'BraTS-PED-00051-000', 'BraTS-PED-00300-000', 'BraTS-PED-00001-000', 'BraTS-PED-00018-000', 'BraTS-PED-00021-000', 'BraTS-PED-00351-000' ]]#sorted(glob.glob(os.path.join(example_dir, "*")))
+    generate_examples =  [os.path.join(example_dir, names) for names in EXAMPLE_LIST]
     order_list = ["-t1c.nii.gz", "-t2f.nii.gz", "-t1n.nii.gz", "-t2w.nii.gz"]
     example_list = [
         [os.path.join(path, f"{Path(path).name}{ending}") for ending in order_list]
         for path in generate_examples
     ]
+    full_example_list = [ [task] + example  for example, task in zip(example_list, EXAMPLE_TASKS)]
 
     gr.Examples(
-        examples=example_list,
-        inputs=[image_t1c, image_t2f, image_t1n, image_t2w],
+        examples=full_example_list,
+        inputs=[model_docker, image_t1c, image_t2f, image_t1n, image_t2w],
         outputs=[mask_file, out_text],
         fn=main_func,
         cache_examples=False,
-        label="Preloaded BraTS2024 Examples",
+        label="Preloaded Examples",
     )
 
     # Button Click Event
@@ -422,41 +395,42 @@ with gr.Blocks(title="Pediatric Segmenter") as demo:
 
     # Dropdown Selection Events
     file_to_render.select(
-        render_axial,
-        inputs=[file_to_render, state_axial, model_docker],
-        outputs=[myimage_axial],
+    lambda f, x, m: render_view(f, x, m, "axial"),
+    inputs=[file_to_render, slider_axial, model_docker],
+    outputs=[myimage_axial],
     )
+
     file_to_render.select(
-        render_coronal,
-        inputs=[file_to_render, state_coronal, model_docker],
+        lambda f, x, m: render_view(f, x, m, "coronal"),
+        inputs=[file_to_render, slider_coronal, model_docker],
         outputs=[myimage_coronal],
     )
+
     file_to_render.select(
-        render_sagittal,
-        inputs=[file_to_render, state_sagittal, model_docker],
+        lambda f, x, m: render_view(f, x, m, "sagittal"),
+        inputs=[file_to_render, slider_sagittal, model_docker],
         outputs=[myimage_sagittal],
     )
 
     # Slider Change Events
     slider_axial.change(
-        render_axial,
-        inputs=[file_to_render, slider_axial, model_docker],
-        outputs=[myimage_axial],
-        api_name="axial_slider",
+    lambda f, x, m: render_view(f, x, m, "axial"),
+    inputs=[file_to_render, slider_axial, model_docker],
+    outputs=[myimage_axial],
+    api_name="axial_slider",
     )
     slider_coronal.change(
-        render_coronal,
+        lambda f, x, m: render_view(f, x, m, "coronal"),
         inputs=[file_to_render, slider_coronal, model_docker],
         outputs=[myimage_coronal],
         api_name="coronal_slider",
     )
     slider_sagittal.change(
-        render_sagittal,
+        lambda f, x, m: render_view(f, x, m, "sagittal"),
         inputs=[file_to_render, slider_sagittal, model_docker],
         outputs=[myimage_sagittal],
         api_name="sagittal_slider",
     )
-
     demo.css = "footer {display: none !important;}"
     gr.Markdown("<center>Built with ❤️ at <a href='https://www.childrensnational.org/'>Children's National</a></center>")
 

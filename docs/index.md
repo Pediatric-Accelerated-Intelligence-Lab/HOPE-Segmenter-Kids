@@ -53,7 +53,7 @@ under license [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.
 The software is developed and maintained by the [Precision Medical Imaging](https://research.childrensnational.org/labs/precision-medical) lab
 at Children’s National Hospital in Washington, DC, USA.  
 
-**Copyright Notification**  Copyright 2024 Children's National Medical Center and Universidad Polit&eacute;cnica de Madrid.
+**Copyright Notification**  Copyright 2026 Children's National Medical Center and Universidad Polit&eacute;cnica de Madrid.
 
 # Contributors
 
