@@ -5,9 +5,11 @@ layout: default
 **I have read the instructions and agree with the terms.** [Return to the application](https://nf1.hope4kids.io/).
 
 The **CAVS-NF1: Central AI-enabled Volumetric Service for NF1** is a free, open-source web-based application designed at [Children's National Hospital](https://www.childrensnational.org/) 
-for the segmentation and analysis of optic pathway gliomas associated with neurofibromatosis type 1 (NF1-OPG)  in  T1 magnetic resonance imaging (MRI). Developed in Python, this web tool aims to provide precise quantitative analysis of pediatric brain MRI, to support clinical decision-making in diagnosis and prognosis.  
+for the segmentation and analysis of optic pathway gliomas associated with neurofibromatosis type 1 (NF1-OPG)  in  T1-weighted magnetic resonance imaging (MRI). Developed in Python, this web tool aims to provide precise quantitative analysis of pediatric brain MRI, to support clinical decision-making in diagnosis and prognosis.  
 
-With its user-friendly interface, **CAVS-NF1** provides automated segmentation and volumetric measurements within 2 minutes after uploading the t1 MRI sequences. This software offers **state-of-the-art performance** powered by our benchmarked segmentation model.  
+With its user-friendly interface, **CAVS-NF1** provides automated segmentation and volumetric measurements within 2 minutes after uploading the t1 MRI sequences. This software offers **state-of-the-art performance** powered by our benchmarked segmentation model. 
+
+Please note that the hypothalamus segmentation is not included in the current version of the tool. 
 
 # Usage
 
